@@ -403,6 +403,7 @@ full cloud tool list, and the slash-command/prompt tables live.
 - [Driving a remote ComfyUI](#driving-a-remote-comfyui)
 - [Targeting a non-default ComfyUI address](#targeting-a-non-default-comfyui-address)
 - [Which address variable do I want?](#which-address-variable-do-i-want)
+- [Public output URLs](#public-output-urls)
 - [Project anchoring](#project-anchoring)
 - [Uploading an input file](#uploading-an-input-file)
 - [Self-hosted remote MCP deployment](#self-hosted-remote-mcp-deployment)
@@ -891,7 +892,7 @@ different layers. Pick by which one you need; the table is the whole answer.
 
 | | `COMFYUI_URL` (+ `COMFYUI_HOST` / `COMFYUI_PORT`) | `COMFY_LOCAL_URL` |
 | --- | --- | --- |
-| **Read by** | **this MCP server** (`_comfy_target`) | **comfy-cli** (`comfy_cli/local_address.py`); this server never reads it |
+| **Read by** | **this MCP server** (`_comfy_target`) | **comfy-cli** (`comfy_cli/local_address.py`) for the connection. This server reads it only in `public_urls` to recognize that origin on generated `/view?type=output` links. It does not forward it as `--host` / `--port`. |
 | **Means** | "a ComfyUI on **another machine** I control" | "the ComfyUI on **this machine** is not on `127.0.0.1:8188`" |
 | **How it acts** | this server forwards `--host` / `--port` to the verbs that accept them | comfy-cli resolves its own target from the environment it inherits |
 | **What it moves** | the **submit / job** tools plus input staging (`run_workflow`, `generate_image`, `run_template`, the `jobs` family, `upload_file`, ChatGPT `init_upload`, and `complete_upload`) — see [what is and isn't remoted](#driving-a-remote-comfyui) | **every** verb, including the ones that take no `--host` / `--port` (`comfy env`, templates, models, download) |
@@ -911,6 +912,14 @@ address-scope word (comfy-cli's *local* target, as opposed to its cloud one), no
 branding. `COMFYUI_URL` is this server's, and already carries no "local" to strip. So there is no
 old spelling to accept and no deprecation period to sit through — if you have either variable in an
 MCP client config today, it keeps working unchanged.
+
+## Public output URLs
+
+`COMFY_LOCAL_URL` is how comfy-cli reaches ComfyUI on this machine, for example `http://127.0.0.1:8189`. Output links in `run_workflow`, `generate_image`, `run_template`, `job`, and `fetch_outputs` therefore look like `http://127.0.0.1:8189/view?filename=...&type=output`. That address is correct on the server and unusable for a remote MCP client.
+
+`COMFY_MCP_PUBLIC_BASE_URL` is the externally reachable base, for example `https://YOUR_HOSTNAME.example`. When it is set, this server rewrites only a `/view` URL whose origin is that local ComfyUI and whose `type` is exactly `output`. The query string is preserved. `type=input`, `type=temp`, other hosts, and cloud or partner URLs are left alone. comfy-cli still downloads with the original local URL. Nothing is copied, base64-encoded, or stored.
+
+`COMFY_MCP_UPLOAD_PUBLIC_BASE_URL`, when set, still controls upload-session URLs and must stay an https origin with no path. When it is unset, `init_upload` uses `COMFY_MCP_PUBLIC_BASE_URL` instead. The public proxy must allow `GET` and `HEAD` of `/view?...&type=output` and keep input, temp, and the UI protected. See [Self-hosted remote MCP deployment](#self-hosted-remote-mcp-deployment).
 
 ## Project anchoring
 
@@ -1006,7 +1015,7 @@ Each process logs one startup line, `startup process=... version=... git=...`, s
 
 | Variable | Role |
 | --- | --- |
-| `COMFY_MCP_UPLOAD_PUBLIC_BASE_URL` | HTTPS origin the curl command targets. Required for a direct PUT session. Example: `https://uploads.example`. |
+| `COMFY_MCP_UPLOAD_PUBLIC_BASE_URL` | HTTPS origin the curl command targets. No path. Optional when `COMFY_MCP_PUBLIC_BASE_URL` is set; that value is the fallback. Example: `https://uploads.example`. |
 | `COMFY_MCP_UPLOAD_DIR` | Shared spool. Default `/var/lib/comfy-mcp/uploads`. |
 | `COMFY_MCP_UPLOAD_TTL_SECONDS` | Session lifetime. Default `600`. |
 | `COMFY_MCP_MAX_UPLOAD_MB` | Maximum original-byte size. Default `1024`. |

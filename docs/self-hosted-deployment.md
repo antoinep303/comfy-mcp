@@ -153,9 +153,10 @@ sudoedit /etc/comfy-mcp.env
 | Variable | Who reads it | What it does |
 | --- | --- | --- |
 | `COMFY_BIN` | comfy-mcp | Absolute `comfy` binary. Default is the bare name `comfy` on `PATH`. |
-| `COMFY_LOCAL_URL` | comfy-cli, via the inherited environment | Local ComfyUI when it is not `127.0.0.1:8188`. Example: `http://127.0.0.1:8189`. This server does not parse the variable. |
+| `COMFY_LOCAL_URL` | comfy-cli, via the inherited environment | Internal ComfyUI control and data URL. Example: `http://127.0.0.1:8189`. This server reads it only to recognize that origin on generated output links. It does not use it to choose a remote target. |
+| `COMFY_MCP_PUBLIC_BASE_URL` | output URL presentation | Externally reachable base for `/view?type=output` URLs returned to MCP clients. Example: `https://YOUR_HOSTNAME.example`. Not the ComfyUI connection URL. |
 | `COMFY_MCP_UPLOAD_DIR` | upload session | Spool directory. Default `/var/lib/comfy-mcp/uploads`. |
-| `COMFY_MCP_UPLOAD_PUBLIC_BASE_URL` | `init_upload` | HTTPS origin only: no userinfo, path, query, or fragment. Required for a manual PUT session. |
+| `COMFY_MCP_UPLOAD_PUBLIC_BASE_URL` | `init_upload` | Optional https origin with no path. When unset, upload URLs use `COMFY_MCP_PUBLIC_BASE_URL`. |
 | `COMFY_MCP_UPLOAD_TTL_SECONDS` | upload session | Lifetime. Default `600`. Clamped to 30..86400. |
 | `COMFY_MCP_MAX_UPLOAD_MB` | upload session | Max original size in megabytes. Default `1024`. Values above `8192` are clamped. |
 | `COMFY_MCP_UPLOAD_HOST` | upload server | Bind address. Only `127.0.0.1` or `::1`. Anything else refuses to start. Default `127.0.0.1`. |
@@ -389,7 +390,7 @@ https://YOUR_HOSTNAME.example
 
 With Funnel, the public name looks like `name.tailXXXX.ts.net`. The tunnel should publish Nginx only. ComfyUI, Supergateway, and the upload server stay on localhost. Routing and authentication stay in Nginx. Another tunnel that targets `http://127.0.0.1:8191` replaces this example entirely.
 
-`COMFY_MCP_UPLOAD_PUBLIC_BASE_URL` must be the HTTPS origin clients use (`https://YOUR_HOSTNAME.example`), because `init_upload` prints that origin into the curl command.
+`COMFY_MCP_PUBLIC_BASE_URL` must be the HTTPS base clients use (`https://YOUR_HOSTNAME.example`). Generated `/view?type=output` links are rewritten onto it. `COMFY_MCP_UPLOAD_PUBLIC_BASE_URL` is optional and overrides that base for upload curl commands only; leave it unset to use the same host. The proxy must keep allowing `GET` and `HEAD` of `/view?...&type=output`. `type=input` and `type=temp` stay closed.
 
 ## Direct upload (Claude, Cursor, other local agents)
 
@@ -463,7 +464,7 @@ Two different clients must not be confused:
 | `fetch_outputs` / `comfy download` on the server | comfy-cli to local ComfyUI | Not affected by Nginx Basic Auth. It never goes through the public proxy. |
 | A remote agent or browser opening the public URL | Nginx, then ComfyUI | Needs the `/view` `type=output` exception. Without it, Basic Auth on `location /` returns 401. |
 
-`run_workflow` / `job` results may already contain `/view` URLs. A remote client can open those only when Nginx allows `type=output`. Rewrite a loopback host in that URL to the public HTTPS origin if the client is not on the server.
+`run_workflow`, `generate_image`, `run_template`, `job`, and `fetch_outputs` return `/view` URLs. With `COMFY_MCP_PUBLIC_BASE_URL` set, a local `type=output` link is already the public URL. `type=input` and `type=temp` stay on the internal origin. comfy-cli still fetches bytes from `COMFY_LOCAL_URL`. A remote client can open the public URL only while Nginx allows `GET` and `HEAD` of `type=output`.
 
 ## Developer note: stdout parser
 
@@ -501,7 +502,7 @@ These logs must not contain the permanent MCP Bearer, a one-time upload Bearer, 
 1. Clone or copy the source to `/opt/src/comfy-mcp`.
 2. Create the virtualenv at `/opt/comfy-mcp`.
 3. `pip install -e /opt/src/comfy-mcp` and `pip install "comfy-cli>=1.14.0"` with that virtualenv's pip.
-4. Install `/etc/comfy-mcp.env` from the example and set `COMFY_BIN`, `COMFY_LOCAL_URL`, and `COMFY_MCP_UPLOAD_PUBLIC_BASE_URL`.
+4. Install `/etc/comfy-mcp.env` from the example and set `COMFY_BIN`, `COMFY_LOCAL_URL`, and `COMFY_MCP_PUBLIC_BASE_URL`. Set `COMFY_MCP_UPLOAD_PUBLIC_BASE_URL` only for a different upload origin.
 5. Create `/var/lib/comfy-mcp/uploads` mode `0700`, owned by `comfy`.
 6. Copy both systemd units into `/etc/systemd/system/` and `systemctl daemon-reload`.
 7. `systemctl enable --now comfy-mcp` and `systemctl enable --now comfy-mcp-upload`.

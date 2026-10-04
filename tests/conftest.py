@@ -155,6 +155,17 @@ def _clear_comfyui_target_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _clear_public_output_base(monkeypatch):
+    """Default tests to no public output base.
+
+    An ambient ``COMFY_MCP_PUBLIC_BASE_URL`` would rewrite local
+    ``/view?type=output`` URLs in every MCP-facing result. Tests that cover
+    the rewrite set the variable themselves.
+    """
+    monkeypatch.delenv("COMFY_MCP_PUBLIC_BASE_URL", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _clear_project_env(monkeypatch):
     """Default every test to the unanchored default (no ``COMFY_PROJECT``).
 

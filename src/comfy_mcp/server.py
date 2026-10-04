@@ -98,6 +98,7 @@ from . import (
     file_ingress,
     instructions,
     params,
+    public_urls,
     target,
     tcc,
     tool_annotations,
@@ -3859,7 +3860,7 @@ async def run_workflow(
     # transient credential code. ``backoff is None`` marks the final attempt.
     for attempt, backoff in enumerate((*_CREDENTIAL_RETRY_BACKOFFS, None)):
         try:
-            return await _attempt()
+            return public_urls.publicize_client_result(await _attempt())
         except ComfyCliError as exc:
             retryable = exc.code in _RETRYABLE_CREDENTIAL_CODES
             if backoff is None or not retryable:
@@ -4158,8 +4159,10 @@ async def generate_image(
         # handle has a job running on their GPU they cannot poll, collect or
         # cancel. `run_template` keeps raising: its docstring documents that, and
         # its callers reach for `wait=False` deliberately.
-        return await _run_template_exec(
-            args, budget, wait=wait, ctx=ctx, timeout_returns_handle=True
+        return public_urls.publicize_client_result(
+            await _run_template_exec(
+                args, budget, wait=wait, ctx=ctx, timeout_returns_handle=True
+            )
         )
     except ComfyCliError as exc:
         missing = _t2i_missing_template_hint(exc, template)
@@ -5691,7 +5694,9 @@ async def run_template(
     # Submit-vs-stream and the parent's grace over the engine deadline are
     # `_run_template_exec`'s, shared with `generate_image` — which rides this very
     # verb, so the two spend the budget identically.
-    return await _run_template_exec(args, budget, wait=wait, ctx=ctx)
+    return public_urls.publicize_client_result(
+        await _run_template_exec(args, budget, wait=wait, ctx=ctx)
+    )
 
 
 # How many trailing traceback frames survive into a `job(action="error")`
@@ -6149,13 +6154,15 @@ async def job(
         bound = argv._bounded_timeout(
             600.0 if timeout_seconds is None else timeout_seconds, _MAX_WATCH_TIMEOUT
         )
-        return await _run_comfy_streaming(
-            "jobs",
-            "watch",
-            prompt_id,
-            ctx=ctx,
-            timeout=bound,
-            raise_on_timeout=False,
+        return public_urls.publicize_client_result(
+            await _run_comfy_streaming(
+                "jobs",
+                "watch",
+                prompt_id,
+                ctx=ctx,
+                timeout=bound,
+                raise_on_timeout=False,
+            )
         )
 
     # Every other branch is a blocking `subprocess` call or a `time.sleep`
@@ -6167,16 +6174,18 @@ async def job(
     # `_in_generate_pool` / `_GENERATE_EXECUTOR`'s reasoning for
     # `partner_generate`'s own blocking run.
     if action == "status":
-        return await anyio.to_thread.run_sync(_job_status_sync, prompt_id)
-    if action == "error":
-        return await anyio.to_thread.run_sync(_job_error_sync, prompt_id)
-    if action == "cancel":
-        return await anyio.to_thread.run_sync(_job_cancel_sync, prompt_id)
-    if action == "queue":
-        return await anyio.to_thread.run_sync(_job_queue_sync)
-    # action == "wait"
-    bound = 25.0 if timeout_seconds is None else timeout_seconds
-    return await anyio.to_thread.run_sync(_job_wait_sync, prompt_id, bound)
+        result = await anyio.to_thread.run_sync(_job_status_sync, prompt_id)
+    elif action == "error":
+        result = await anyio.to_thread.run_sync(_job_error_sync, prompt_id)
+    elif action == "cancel":
+        result = await anyio.to_thread.run_sync(_job_cancel_sync, prompt_id)
+    elif action == "queue":
+        result = await anyio.to_thread.run_sync(_job_queue_sync)
+    else:
+        # action == "wait"
+        bound = 25.0 if timeout_seconds is None else timeout_seconds
+        result = await anyio.to_thread.run_sync(_job_wait_sync, prompt_id, bound)
+    return public_urls.publicize_client_result(result)
 
 
 # `comfy system-stats` and `comfy free` landed in comfy-cli 1.14.0, which is also
@@ -6453,11 +6462,13 @@ def fetch_outputs(
     # ``url_only=True`` downloads no bytes, so there is nothing on disk to inline
     # — short-circuit rather than let basename matching surface stale files from
     # a previous run into ``out_dir`` (which would contradict the docstring).
+    # Image paths are resolved from the local payload first. The public form
+    # is only the object handed back to the MCP client.
     if not inline_images or url_only:
-        return data
+        return public_urls.publicize_client_result(data)
     paths = _select_inline_images(_collect_output_images(data, out_dir))
     images = [Image(path=path) for path in paths]
-    return [data, *images]
+    return [public_urls.publicize_client_result(data), *images]
 
 
 # ComfyUI's two network-EXPOSING flags. Both are declared `nargs="?"` in

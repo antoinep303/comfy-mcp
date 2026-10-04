@@ -42,6 +42,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
+from . import public_urls
 from .errors import ComfyCliError
 
 _LOG = logging.getLogger("comfy_mcp.upload")
@@ -222,19 +223,37 @@ def bind_host_port() -> tuple[str, int]:
 
 
 def public_base_url() -> str:
+    """HTTPS base printed into an ``init_upload`` curl command.
+
+    ``COMFY_MCP_UPLOAD_PUBLIC_BASE_URL``, when set, wins and stays an origin
+    with no path. When it is unset, ``COMFY_MCP_PUBLIC_BASE_URL`` is the
+    fallback, including an optional path prefix.
+    """
     raw = os.environ.get("COMFY_MCP_UPLOAD_PUBLIC_BASE_URL", "").strip().rstrip("/")
-    if not raw:
+    if raw:
+        if not _ORIGIN_RE.fullmatch(raw):
+            raise ComfyCliError(
+                "COMFY_MCP_UPLOAD_PUBLIC_BASE_URL must be an https origin with no "
+                "userinfo, path, query, or fragment."
+            )
+        return raw
+    generic = os.environ.get("COMFY_MCP_PUBLIC_BASE_URL", "").strip()
+    fallback = public_urls.normalized_public_base() if generic else None
+    if fallback is None or not fallback.startswith("https://"):
+        if generic:
+            raise ComfyCliError(
+                "COMFY_MCP_PUBLIC_BASE_URL cannot stand in for the upload origin. "
+                "Set COMFY_MCP_UPLOAD_PUBLIC_BASE_URL to an https origin, or set "
+                "COMFY_MCP_PUBLIC_BASE_URL to an https URL with no userinfo, "
+                "query, or fragment."
+            )
         raise ComfyCliError(
             "COMFY_MCP_UPLOAD_PUBLIC_BASE_URL is not set. Direct upload needs "
             "the public https origin that proxies PUT /upload/ to "
-            "comfy-mcp-upload-server."
+            "comfy-mcp-upload-server. COMFY_MCP_PUBLIC_BASE_URL is the fallback "
+            "when this upload-specific origin is unset."
         )
-    if not _ORIGIN_RE.fullmatch(raw):
-        raise ComfyCliError(
-            "COMFY_MCP_UPLOAD_PUBLIC_BASE_URL must be an https origin with no "
-            "userinfo, path, query, or fragment."
-        )
-    return raw
+    return fallback
 
 
 def payload_path(directory: str, filename: str) -> str:
