@@ -90,19 +90,24 @@ def test_server_reads_the_comfyui_vars_and_not_comfy_local_url():
             f"{ours} is no longer read"
         )
 
-    for name, source in sources.items():
-        assert not _reads_env(source, "COMFY_LOCAL_URL"), (
-            f"{name} now reads COMFY_LOCAL_URL directly — it is comfy-cli's "
-            "variable, and the README's ownership split (and the decision not to "
-            "rename it) assumes the passthrough, not a direct read"
-        )
+    readers = sorted(
+        name
+        for name, source in sources.items()
+        if _reads_env(source, "COMFY_LOCAL_URL")
+    )
+    assert readers == ["public_urls.py"], (
+        "COMFY_LOCAL_URL is comfy-cli's connection variable. The only direct "
+        f"read allowed is public_urls.py recognizing output URLs; found {readers}"
+    )
 
 
 def test_section_names_the_owner_of_each_variable(section: str):
     """A reader has to be able to tell which program reads which variable."""
     assert "COMFYUI_URL" in section and "COMFY_LOCAL_URL" in section
     assert "comfy-cli" in section, "the section no longer names COMFY_LOCAL_URL's owner"
-    assert "never reads it" in section, "the 'not read by this server' claim is gone"
+    assert "does not forward it as `--host`" in section, (
+        "the section no longer says this server leaves the connection to comfy-cli"
+    )
 
 
 def test_section_states_that_neither_variable_is_deprecated(section: str):

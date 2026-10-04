@@ -37,6 +37,12 @@ flows:
   does not block; same for `generate_image` / `run_template` on slow hardware,
   where YOUR transport cap bounds a `wait=True` call too. A run that outlives
   a wait keeps going — poll its `prompt_id`, never re-run it.
+  Output URLs in those results are the address comfy-cli used
+  (`COMFY_LOCAL_URL`, else `http://127.0.0.1:8188`). When
+  `COMFY_MCP_PUBLIC_BASE_URL` is set, this server rewrites ONLY a local
+  `/view` URL whose `type` is `output` onto that public base before returning
+  it. `type=input` and `type=temp` stay internal. comfy-cli still downloads
+  with the original local URL.
 - Large model downloads: `download_model` submits to a background worker and
   returns a `download_id`; poll `download(action="wait")` /
   `download(action="status")`, or `download(action="cancel")` to stop one.
